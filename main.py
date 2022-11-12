@@ -1,11 +1,15 @@
-#/bin/python
+#!/bin/python3
 
 import pyglet
 
-from math import sin, cos, acos, pi
-
+from math import sin, cos, acos, atan, pi
+from random import randint
 
 G = 6.67408 * 10**-11
+
+SOLAR_MASS = 2 * 10**30
+EARTH_MASS = 5.9 * 10**24
+MOON_MASS = 7.3 * 10**22
 
 def gravity_force(m1, m2, r): 
     if not r:
@@ -37,19 +41,26 @@ class Vec2:
     def __mul__(self, factor):
         return Vec2(x=self.x*factor, y=self.y*factor)
 
-    def multiply(self, vector) -> float:
-        return self.x * vector.x + self.y * vector.y
+    # def multiply(self, vector) -> float:
+    #     return self.x * vector.x + self.y * vector.y
 
-    def mirror(self, normal):
-        normal = normal.normalize()
-        # print(self.dot_product(normal))
-        return self - normal*self.dot_product(normal)*2
+    # def mirror(self, normal):
+    #     normal = normal.normalize()
+    #     # print(self.dot_product(normal))
+    #     return self - normal*self.dot_product(normal)*2
 
-    def dot_product(self, vector) -> float:
-        if not self.length or not vector.length:
-            return 0
+    def dot(self, vector) -> float:
+        return self.x*vector.x + self.y*vector.y
+
+    def angle_to(self, vector) -> float:
         return acos(
-            round(self.multiply(vector), 4) / round(self.length*vector.length, 4)
+            self.dot(vector) / (self.length*vector.length)
+        )
+
+    def rotate(self, theta):
+        return Vec2(
+            x=self.x*cos(theta) - self.y*sin(theta),
+            y=self.x*sin(theta) + self.y*cos(theta)
         )
 
     def normalize(self):
@@ -63,174 +74,170 @@ class Vec2:
         return (self.x**2 + self.y**2) ** 0.5
 
     def __str__(self):
-        return f"{self.x}, {self.y}"
+        return f"x={self.x:.4f}, y={self.y:.4f}"
 
 
 class Entity:
-    def __init__(self, mass: float, position: Vec2 = Vec2(0)):
+    def __init__(self, batch: pyglet.graphics.Batch, mass: float, radius: float = 0, position: Vec2 = Vec2(0), velocity: Vec2 = Vec2(0)):
         self.mass: float = mass
         
         self.force: Vec2 = Vec2(0)
         self.acceleration: Vec2 = Vec2(0)
-        self.velocity: Vec2 = Vec2(0)
+        self.velocity: Vec2 = velocity
         self.position: Vec2 = position
 
-        self.radius = self.mass * 2
+        self.radius = mass * 2 if not radius else radius
+        self.color = randint(0, 255), randint(0, 255), randint(0, 255)
         self.shape = pyglet.shapes.Circle(
-            self.position.x, self.position.y, radius=self.radius, color=(175, 30, 200)
+            self.position.x, self.position.y, radius=self.radius, color=self.color, batch=batch
         )
 
-    def move(self, *entities):
+        # self.path_line = batch.add(50, pyglet.gl.GL_LINES, None, ('v2f', ()))
+        # self.path = [self.position.x, self.position.y]
+
+    def move(self, bounds: Vec2, *entities):
         self.acceleration = Vec2(
             x=self.force.x / self.mass, y=self.force.y / self.mass
         )
+
         self.velocity += self.acceleration
-
-        for entity in entities:
-            if entity is not self:
-                future_distance = ((self.position + self.velocity) - (entity.position + entity.velocity)).length
-                if future_distance < self.radius + entity.radius:  # collision
-                    
-                    new_velocity_len = (self.mass - entity.mass)*self.velocity.length/(self.mass + entity.mass) \
-                                + 2*entity.mass*entity.velocity.length/(self.mass + entity.mass)
-
-                    self.velocity = self.velocity.mirror(((entity.position + entity.velocity) - (self.position + self.velocity))).normalize() * new_velocity_len
-                    # self.velocity = Vec2(0) - self.velocity
-                    print("bounce", self.mass)
-
         self.position += self.velocity
 
         self.shape.x, self.shape.y = self.position.x, self.position.y
-        self.force = Vec2(0)
 
-    @property
-    def momentum(self):
-        return self.mass * self.velocity.length
+        if (self.position.x < 0 or self.position.x > bounds.x):
+            self.velocity.x *= -1        
+        if (self.position.y < 0 or self.position.y > bounds.y):
+            self.velocity.y *= -1
 
-    @property
-    def kinetic_energy(self):
-        return self.mass * (self.velocity.length**2) * 0.5
+    #     self.path.extend([self.position.x, self.position.y])
+    #     self.path = self.path[:100]
+
+    # def draw(self):
+    #     self.shape.draw()
+
+    # def draw_path(self):
+    #     pyglet.graphics.draw(len(self.path), pyglet.gl.GL_LINES, position=('f', self.path))
 
 
 class Body(Entity):
-    def __init__(self, mass: float, position: Vec2 = Vec2(0)):
-        super().__init__(mass=mass, position=position)
+    def __init__(self, batch: pyglet.graphics.Batch, mass: float, radius: float = 0, position: Vec2 = Vec2(0), velocity: Vec2 = Vec2(0)):
+        super().__init__(batch, mass=mass, radius=radius, position=position, velocity=velocity)
 
     def get_forces(self, *bodies):
+        self.force = Vec2(0)
         for body in bodies:
             if body is not self:
                 distance = (self.position - body.position).length
                 if distance > self.radius + body.radius:
                     force = gravity_force(
                         self.mass, body.mass, 
-                        (self.position - body.position).length
+                        distance
                     )
                     direction = (body.position - self.position).normalize()
 
                     self.force += Vec2(
                         x=force*direction.x, y=force*direction.y
                     )
+                    # self.collided, body.collided = False, False
+                elif distance < self.radius + body.radius:
+                    self.collide(body)
 
-        # return
+    def collide(self, body):
+        
+        if ((self.position + self.velocity) - (body.position + body.velocity)).length > self.radius + body.radius:
+            return  # they are not moving closer to each other
 
-        for body in bodies:
-            if body is not self:
-                if (body.position - self.position).length <= self.radius + body.radius:  # collision
-                    normal = self.position - body.position
+        m1, m2 = self.mass, body.mass
 
-                    total_momentum = self.momentum + body.momentum
-                    kinetic_energy = self.kinetic_energy + body.kinetic_energy
+        dp = body.position - self.position
+        the1 = atan(dp.y / dp.x)
 
-                    self.velocity
+        tv1 = self.velocity.rotate(-the1)
+        tv2 = body.velocity.rotate(-the1)
+        
+        tv1.x, tv2.x = \
+            tv1.x*(m1 - m2)/(m1 + m2) + tv2.x*2*m2/(m1 + m2), \
+            tv1.x*2*m1/(m1 + m2) + tv2.x*(m2 - m1)/(m1 + m2)
 
-                    # self.force = self.velocity.mirror(normal).normalize() * self.force.length
-                    # self.velocity = Vec2(0)
+        # print("during: ", tv1, tv2)
+        # u1 = tv1.x
+        # u2 = tv2.x
 
-                    # theta = self.force.dot_product(normal)  # angle from force to normal
-                    # print(theta)
-                    # length_of_new = self.force.length * sin(theta)
+        # mt_1 = 1/(m1 + m2)
+        # v1 = u1*(m1 - m2)*mt_1 + u2*2*m2*mt_1
+        # v2 = u1*2*m1*mt_1 + u2*(m2 - m1)*mt_1
 
-                    # alpha = normal.dot_product(Vec2(x=1, y=0))  # angle to x axis
+        # print(f"{u1:.4f} -> {v1:.4f} and {u2:.4f} -> {v2:.4f}")
 
-                    # self.force = Vec2(mag=length_of_new, arg=alpha + pi*0.5)
-                    # self.velocity = Vec2(0)
+        # tv1.x = v1
+        # tv2.x = v2
+
+        self.velocity = tv1.rotate(the1)
+        body.velocity = tv2.rotate(the1)
 
 
 class Window(pyglet.window.Window):
-    def __init__(self):
-        super(Window, self).__init__(width=900, height=900, caption="Gravity")
+    def __init__(self, width, height, caption):
+        super(Window, self).__init__(width=width, height=height, caption=caption)
         self.fps_display = pyglet.window.FPSDisplay(self)
 
+        self.to_draw = []
         self.entities = []
-        self.bodies = []
 
     def track(self, *entities):
         for entity in entities:
-            self.entities.append(entity)
+            if isinstance(entity, pyglet.graphics.Batch):
+                self.to_draw.append(entity)
+            if isinstance(entity, Entity):
+                self.entities.append(entity)
 
     def on_key_press(self, symbol, modifiers):
         if symbol == pyglet.window.key.ESCAPE:
             self.close()
 
-    # def on_key_release(self, symbol, modifiers):
-    #     if symbol == pyglet.window.key.ESCAPE:
-    #         self.close()    
+    def on_key_release(self, symbol, modifiers):
+        pass
             
     def on_mouse_press(self, x, y, button, modifiers):
         pass
 
     def on_draw(self):
-        self.update()
-
         self.clear()
 
-        for entity in self.entities:
-            entity.shape.draw()
+        for entity in self.to_draw:
+            entity.draw()
 
         self.fps_display.draw()
 
-    def update(self):
+    def update(self, dt):
         for entity in self.entities:
             if isinstance(entity, Body):
                 entity.get_forces(*self.entities)
-            entity.move(*self.entities)
+            entity.move(Vec2(x=self.width, y=self.height), *self.entities)
 
+    def start(self):
+        pyglet.clock.schedule_interval(self.update, 1/120)
+        pyglet.app.run()
 
 def main():
 
-    window = Window()
+    window = Window(900, 900, "gravity")
 
+    bodies_batch = pyglet.graphics.Batch()
     bodies = [
-        Body(mass=10, position=Vec2(x=370, y=370)),
-        Body(mass=4, position=Vec2(x=400, y=400)),
+        Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=450, y=450), velocity=Vec2(x=-0.0, y=-0.0)),
+        Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=50, y=50), velocity=Vec2(x=0.1, y=0.1)),
+        Body(batch=bodies_batch, mass=1, radius=5, position=Vec2(x=400, y=12), velocity=Vec2(x=0, y=0)),
+        Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=23, y=400), velocity=Vec2(x=-0, y=-0.5)),
+        Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=900, y=800), velocity=Vec2(x=-0.2, y=-0.1)),
+        Body(batch=bodies_batch, mass=1, radius=5, position=Vec2(x=750, y=250), velocity=Vec2(x=-0, y=0)),
+    ]
 
-        Body(mass=10, position=Vec2(x=23, y=324)),
-        Body(mass=12, position=Vec2(x=800, y=227)),
-        Body(mass=8, position=Vec2(x=22, y=645)),
-        Body(mass=4, position=Vec2(x=766, y=11)),
-        Body(mass=4, position=Vec2(x=243, y=11)),
-        Body(mass=4, position=Vec2(x=22, y=11)),
-        Body(mass=4, position=Vec2(x=414, y=11)),
-        Body(mass=4, position=Vec2(x=882, y=11)),
-    ]
-    entities = [
-        Body(mass=1, position=Vec2(x=450, y=450))
-    ]
-    window.track(*bodies)
+    window.track(bodies_batch, *bodies)
     
-    pyglet.app.run()
+    window.start()
 
 
 if __name__ == '__main__':
     main()
-
-    # v1 = Vec2(x=3, y=5)
-    # v2 = Vec2(x=-4, y=-2).normalize()
-
-    # print(f"{v1.x}, {v1.y}")
-    # print(f"{v2.x}, {v2.y}")
-
-    # for i in range(4):
-    #     v1 += v2
-    #     print(f"{v1.x}, {v1.y}")
-
