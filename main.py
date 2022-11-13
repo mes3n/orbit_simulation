@@ -41,22 +41,6 @@ class Vec2:
     def __mul__(self, factor):
         return Vec2(x=self.x*factor, y=self.y*factor)
 
-    # def multiply(self, vector) -> float:
-    #     return self.x * vector.x + self.y * vector.y
-
-    # def mirror(self, normal):
-    #     normal = normal.normalize()
-    #     # print(self.dot_product(normal))
-    #     return self - normal*self.dot_product(normal)*2
-
-    def dot(self, vector) -> float:
-        return self.x*vector.x + self.y*vector.y
-
-    def angle_to(self, vector) -> float:
-        return acos(
-            self.dot(vector) / (self.length*vector.length)
-        )
-
     def rotate(self, theta):
         return Vec2(
             x=self.x*cos(theta) - self.y*sin(theta),
@@ -92,9 +76,6 @@ class Entity:
             self.position.x, self.position.y, radius=self.radius, color=self.color, batch=batch
         )
 
-        # self.path_line = batch.add(50, pyglet.gl.GL_LINES, None, ('v2f', ()))
-        # self.path = [self.position.x, self.position.y]
-
     def move(self, bounds: Vec2, *entities):
         self.acceleration = Vec2(
             x=self.force.x / self.mass, y=self.force.y / self.mass
@@ -109,15 +90,6 @@ class Entity:
             self.velocity.x *= -1        
         if (self.position.y < 0 or self.position.y > bounds.y):
             self.velocity.y *= -1
-
-    #     self.path.extend([self.position.x, self.position.y])
-    #     self.path = self.path[:100]
-
-    # def draw(self):
-    #     self.shape.draw()
-
-    # def draw_path(self):
-    #     pyglet.graphics.draw(len(self.path), pyglet.gl.GL_LINES, position=('f', self.path))
 
 
 class Body(Entity):
@@ -148,7 +120,7 @@ class Body(Entity):
         if ((self.position + self.velocity) - (body.position + body.velocity)).length > self.radius + body.radius:
             return  # they are not moving closer to each other
 
-        m1, m2 = self.mass, body.mass
+        elasticity = 1.0
 
         dp = body.position - self.position
         the1 = atan(dp.y / dp.x)
@@ -157,21 +129,8 @@ class Body(Entity):
         tv2 = body.velocity.rotate(-the1)
         
         tv1.x, tv2.x = \
-            tv1.x*(m1 - m2)/(m1 + m2) + tv2.x*2*m2/(m1 + m2), \
-            tv1.x*2*m1/(m1 + m2) + tv2.x*(m2 - m1)/(m1 + m2)
-
-        # print("during: ", tv1, tv2)
-        # u1 = tv1.x
-        # u2 = tv2.x
-
-        # mt_1 = 1/(m1 + m2)
-        # v1 = u1*(m1 - m2)*mt_1 + u2*2*m2*mt_1
-        # v2 = u1*2*m1*mt_1 + u2*(m2 - m1)*mt_1
-
-        # print(f"{u1:.4f} -> {v1:.4f} and {u2:.4f} -> {v2:.4f}")
-
-        # tv1.x = v1
-        # tv2.x = v2
+            elasticity*(tv1.x*(self.mass - body.mass) + tv2.x*2*body.mass)/(self.mass + body.mass), \
+            elasticity*(tv1.x*2*self.mass + tv2.x*(body.mass - self.mass))/(self.mass + body.mass)
 
         self.velocity = tv1.rotate(the1)
         body.velocity = tv2.rotate(the1)
@@ -219,6 +178,7 @@ class Window(pyglet.window.Window):
     def start(self):
         pyglet.clock.schedule_interval(self.update, 1/120)
         pyglet.app.run()
+
 
 def main():
 
