@@ -11,11 +11,6 @@ SOLAR_MASS = 2 * 10**30
 EARTH_MASS = 5.9 * 10**24
 MOON_MASS = 7.3 * 10**22
 
-def gravity_force(m1, m2, r): 
-    if not r:
-        return 0
-    return (5*m1*m2)/(r**2)
-
 
 class Vec2:
     def __init__(self, *args, **kwargs):
@@ -102,10 +97,7 @@ class Body(Entity):
             if body is not self:
                 distance = (self.position - body.position).length
                 if distance > self.radius + body.radius:
-                    force = gravity_force(
-                        self.mass, body.mass, 
-                        distance
-                    )
+                    force = 5*self.mass*body.mass*distance**-2  # Newtons law for gravitational attraction
                     direction = (body.position - self.position).normalize()
 
                     self.force += Vec2(
@@ -122,16 +114,19 @@ class Body(Entity):
 
         elasticity = 1.0
 
+        # rotate to align x axis of the velocities
         dp = body.position - self.position
         the1 = atan(dp.y / dp.x)
 
         tv1 = self.velocity.rotate(-the1)
         tv2 = body.velocity.rotate(-the1)
         
+        # calculate velocities after collision with momentum
         tv1.x, tv2.x = \
             elasticity*(tv1.x*(self.mass - body.mass) + tv2.x*2*body.mass)/(self.mass + body.mass), \
             elasticity*(tv1.x*2*self.mass + tv2.x*(body.mass - self.mass))/(self.mass + body.mass)
 
+        # rotate velocities to previos angle
         self.velocity = tv1.rotate(the1)
         body.velocity = tv2.rotate(the1)
 
@@ -185,14 +180,17 @@ def main():
     window = Window(900, 900, "gravity")
 
     bodies_batch = pyglet.graphics.Batch()
+    # bodies = [
+    #     Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=450, y=450), velocity=Vec2(x=-0.0, y=-0.0)),
+    #     Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=50, y=50), velocity=Vec2(x=0.1, y=0.1)),
+    #     Body(batch=bodies_batch, mass=1, radius=5, position=Vec2(x=400, y=12), velocity=Vec2(x=0, y=0)),
+    #     Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=23, y=400), velocity=Vec2(x=-0, y=-0.5)),
+    #     Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=900, y=800), velocity=Vec2(x=-0.2, y=-0.1)),
+    #     Body(batch=bodies_batch, mass=1, radius=5, position=Vec2(x=750, y=250), velocity=Vec2(x=-0, y=0)),
+    # ]
     bodies = [
-        Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=450, y=450), velocity=Vec2(x=-0.0, y=-0.0)),
-        Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=50, y=50), velocity=Vec2(x=0.1, y=0.1)),
-        Body(batch=bodies_batch, mass=1, radius=5, position=Vec2(x=400, y=12), velocity=Vec2(x=0, y=0)),
-        Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=23, y=400), velocity=Vec2(x=-0, y=-0.5)),
-        Body(batch=bodies_batch, mass=10, radius=20, position=Vec2(x=900, y=800), velocity=Vec2(x=-0.2, y=-0.1)),
-        Body(batch=bodies_batch, mass=1, radius=5, position=Vec2(x=750, y=250), velocity=Vec2(x=-0, y=0)),
-    ]
+        Body(batch=bodies_batch, mass=randint(1, 20), position=Vec2(x=randint(0, 900), y=randint(0, 900)), velocity=Vec2(x=randint(-100, 100), y=randint(-100, 100)).normalize())
+            for _ in range(10)]
 
     window.track(bodies_batch, *bodies)
     
